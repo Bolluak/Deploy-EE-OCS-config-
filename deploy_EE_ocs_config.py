@@ -20,6 +20,7 @@ sap_id =  None
 #------------------------------------------------------------------------------------------------------------
 ne_aas_info = {
         'physicalName': None,
+        'logicalName': None,
         'port': None,
 }
 
@@ -91,33 +92,46 @@ class ne_crt_session(object):
 
 #------------------------------------------------------------------------------------------------------------
 class eas_ocs_configuration(ne_crt_session):
-    def __init__(self, bastian_session, ne_ip, tab_title):
+    def __init__(self, bastian_session, eas_type, ne_host, tab_title):
         self.bastian_session = bastian_session
-        self.ne_ip = ne_ip
+        self.ne_host = ne_host
         self.tab_title = tab_title
-        super(eas_ocs_configuration, self).__init__(bastian_session, ne_ip, tab_title)
+        self.eas_type = eas_type
+        super(eas_ocs_configuration, self).__init__(bastian_session, ne_host, tab_title)
 
 
-    def check_vpls(self,vplsid):
-        self.session_Tab_Obj.Activate()
+    def check_vpls_and_sap(self):
+        self.session_Tab_Obj.Activate()                                                                                 #Bring session tab foreground
+
         self.login()
-        vpls_check = self.send_and_retrieve('show service service-using | match  "OCS for BNTD Management"', "SW")
-        vpls_id = vpls_check.split()[0]
-        crt.Dialog.MessageBox(str(vpls_id), "vpls id:", IDOK)
+        vpls_check = self.send_and_retrieve('show service service-using vpls customer 10 | match  "OCS for BNTD Management"', "SW")
+        if not vpls_check.strip():
+            crt.Dialog.MessageBox("Vpls does not exist In network","Missing VPLS", IDOK)
+        else:
+            vpls_id = vpls_check.split()[0]                                                                             #split line into list along white space
+            crt.Dialog.MessageBox(str(vpls_id), "vpls id:", IDOK)
 
-        sap_check = self.send_and_retrieve('show service id ' + str(vpls_id) + 'base | match sap-' + str(ne_eas_info['Sec_eas']['lags_id']), "SW")
-        crt.Dialog.MessageBox(str(sap_check), "sap id:", IDOK)
+            sap_check = self.send_and_retrieve('show service id ' + str(vpls_id) + ' base | match sap:lag-' + str(ne_eas_info[self.eas_type]['lags_id']), "SW")
+            if not sap_check.strip():                                                                                   #if sap is missing and not configured in VPLS
+                "Configured sap, it's missing"
+                sap_id = sap_check.split()[0]  # split line into list along white space
+                crt.Dialog.MessageBox(str(sap_id), "sap id:", IDOK)
+            else:
+                crt.Dialog.MessageBox("Sap existed EAN In network", "Sap existed", IDOK)
+                sap_id = sap_check.split()[0]  # split line into list along white space
+                crt.Dialog.MessageBox(str(sap_id), "sap id:", IDOK)
+
         self.logout()
 
 #------------------------------------------------------------------------------------------------------------
 class aas_ocs_configuration(ne_crt_session):
     aas_crt_session = None
 
-    def __init__(self, bastian_session, ne_ip, tab_title):
+    def __init__(self, bastian_session, ne_host, tab_title):
         self.bastian_session = bastian_session
-        self.ne_ip = ne_ip
+        self.ne_host = ne_host
         self.tab_title = tab_title
-        super(aas_ocs_configuration, self).__init__(bastian_session, ne_ip, tab_title)
+        super(aas_ocs_configuration, self).__init__(bastian_session, ne_host, tab_title)
 
 
         self.login()
@@ -154,6 +168,7 @@ def pni_trace_data(ee_directory):
 
         #AAS Information
         ne_aas_info['physicalName'] = data['aas']['physicalName']
+        ne_aas_info['logicalName'] = data['aas']['logicalName']
         ne_aas_info['port'] = data['aas']['port']
 
         #EAS information
@@ -175,18 +190,17 @@ pni_trace_data(jsonfile_path)
 
 bastian_session = create_bas_session(bastian_hostname, scriptDir)
 
-pri_eas_config = eas_ocs_configuration(bastian_session, ne_eas_info['Pri_eas']['logicalName'], ne_eas_info['Pri_eas']['logicalName'])
-sec_eas_config = eas_ocs_configuration(bastian_session, ne_eas_info['Sec_eas']['logicalName'], ne_eas_info['Sec_eas']['logicalName'])
-aas_config = aas_ocs_configuration(bastian_session, "10.96.66.16", "SWAAS0000738")
+pri_eas_config = eas_ocs_configuration(bastian_session, 'Pri_eas', ne_eas_info['Pri_eas']['logicalName'], ne_eas_info['Pri_eas']['logicalName'])
+sec_eas_config = eas_ocs_configuration(bastian_session, 'Sec_eas', ne_eas_info['Sec_eas']['logicalName'], ne_eas_info['Sec_eas']['logicalName'])
+aas_config = aas_ocs_configuration(bastian_session, ne_aas_info['logicalName'],  ne_aas_info['logicalName'])
 
-pri_eas_config.check_vpls(vpls_id)
-sec_eas_config.check_vpls(vpls_id)
+pri_eas_config.check_vpls_and_sap()
+sec_eas_config.check_vpls_and_sap()
 
 btd_crt_session = ne_crt_session(bastian_session, "10.227.86.7", "SWBTD0000401")
 # crt.Sleep(DELAY)
 btd_crt_session.login()
 Stringdata = btd_crt_session.send_and_retrieve('show port 1/1/1 optical  | match "Serial Number"', "SW")
-crt.Dialog.MessageBox(Stringdata, "serial number", IDOK)
 btd_crt_session.logout()
 
 crt.Dialog.MessageBox(str(ne_aas_info), "serial number", IDOK)
