@@ -5,9 +5,12 @@ import time
 import subprocess
 import json
 import re
+import os
+import csv
+
 
 scriptDir = r"C:\Users\bolluak\Automation\Deploy-EE-OCS-config-\deploy_EE_OCS_config.py"
-jsonfile_path = r"S:\Infrastructure Integration\EE\3HGT-70-556-BTD-0601 SWBTD0000555 for SANDRINGHAM SECONDARY COLLEGE ROR000000025631"
+main_directory = r"S:\Infrastructure Integration\EE\EE Completed orders\03-VIC\3HGT-70-556-BTD-0601 SWBTD0000555 for SANDRINGHAM SECONDARY COLLEGE ROR000000025631\SWBTD0000555-Connect-Config-20200305_09_34"
 bastian_hostname = "NBN_NOC_Bastion_SAM_2FA_GL"
 # Pause script execution in 1000ms or 1 second to allow remote host to time to response
 DELAY = 1000
@@ -27,6 +30,10 @@ ne_aas_info = {
 ne_eas_info = {
         'Pri_eas': {'physicalName': None, 'logicalName': None,'lags_id': None},
         'Sec_eas': {'physicalName': None, 'logicalName': None,'lags_id': None},
+}
+
+order_paramaters = {
+
 }
 #------------------------------------------------------------------------------------------------------------
 # Network Element secureCRT session class
@@ -102,26 +109,49 @@ class eas_ocs_configuration(ne_crt_session):
 
     def check_vpls_and_sap(self):
         self.session_Tab_Obj.Activate()                                                                                 #Bring session tab foreground
-
         self.login()
+
         vpls_check = self.send_and_retrieve('show service service-using vpls customer 10 | match  "OCS for BNTD Management"', "SW")
-        if not vpls_check.strip():
+
+        if not vpls_check.strip():                                                             # If return string is emptry
             crt.Dialog.MessageBox("Vpls does not exist In network","Missing VPLS", IDOK)
+            ' Investigate why configuration missing'
         else:
-            vpls_id = vpls_check.split()[0]                                                                             #split line into list along white space
+            vpls_id = vpls_check.split()[0]                                                     #split line into list along white space
             crt.Dialog.MessageBox(str(vpls_id), "vpls id:", IDOK)
 
-            sap_check = self.send_and_retrieve('show service id ' + str(vpls_id) + ' base | match sap:lag-' + str(ne_eas_info[self.eas_type]['lags_id']), "SW")
-            if not sap_check.strip():                                                                                   #if sap is missing and not configured in VPLS
-                "Configured sap, it's missing"
-                sap_id = sap_check.split()[0]  # split line into list along white space
-                crt.Dialog.MessageBox(str(sap_id), "sap id:", IDOK)
+            sap_check = self.send_and_retrieve('show service id ' + str(vpls_id) + ' base | match sap:lag-'
+                                               + str(ne_eas_info[self.eas_type]['lags_id']), "SW")
+
+            if not sap_check.strip():                                                            #if sap is missing and not configured in VPLS
+                " Configured sap, it's missing "
+                crt.Dialog.MessageBox("Sap missing, configured", "missing sap id:", IDOK)
+
+                " More actions to configure sap into vpls"
+                self.deploy_ocs_config()
             else:
-                crt.Dialog.MessageBox("Sap existed EAN In network", "Sap existed", IDOK)
                 sap_id = sap_check.split()[0]  # split line into list along white space
-                crt.Dialog.MessageBox(str(sap_id), "sap id:", IDOK)
+                crt.Dialog.MessageBox(str(sap_id), "Sap existed in EAN network: sap id is:", IDOK)
+
+                self.deploy_ocs_config()
 
         self.logout()
+
+    def deploy_ocs_config(self):
+        ROR_order_id = order_paramater_value(main_directory, 'Appian Order')
+        btd_logical_name = order_paramater_value(main_directory, 'BNTD Logical Device name')
+
+        with open(main_directory + r"\\" + str(ROR_order_id) + '-' + str(btd_logical_name) + "-ocs_config.txt",'r') as text_file:
+             OCS_config = text_file.read().splitlines()
+             EAS_OCS_Config = []
+
+             for line in OCS_config:
+                 if ne_eas_info[self.eas_type]['physicalName'] in line:
+                    EAS_OCS_Config.append(OCS_config[OCS_config.index(line):OCS_config.index(line) + 44])
+                    crt.Dialog.MessageBox(str(EAS_OCS_Config), "EAS OCS Config are",IDOK)
+                    break
+
+
 
 #------------------------------------------------------------------------------------------------------------
 class aas_ocs_configuration(ne_crt_session):
@@ -139,6 +169,7 @@ class aas_ocs_configuration(ne_crt_session):
         crt.Dialog.MessageBox(Stringdata, "serial number", IDOK)
         self.logout()
 #------------------------------------------------------------------------------------------------------------
+
 
 def create_bas_session(remote_Machine, script):
     """
@@ -186,7 +217,23 @@ def pni_trace_data(ee_directory):
 
 
 
-pni_trace_data(jsonfile_path)
+def config_directory(main_directory):
+    _btd_logical_name = [x for x in main_directory.split() if re.search("SWBTD",x)]
+    conf_dir_path = [x for x in os.listdir(main_directory) if re.search(str(_btd_logical_name[0] + "-Connect-Config"),x)]
+    return conf_dir_path[0][0:42]
+
+
+def order_paramater_value (main_directory,key):
+     f_name  = [x for x in os.listdir(main_directory) if re.search("-parameters.csv",x)]
+     with open(main_directory + r"\\" + f_name[0], 'r') as csv_file:
+          csv_reader_obj = csv.reader(csv_file)
+          for row in csv_reader_obj:
+              k,v = row
+              order_paramaters[k] = v
+     return order_paramaters[key]
+
+
+pni_trace_data(main_directory)
 
 bastian_session = create_bas_session(bastian_hostname, scriptDir)
 
@@ -205,3 +252,4 @@ btd_crt_session.logout()
 
 crt.Dialog.MessageBox(str(ne_aas_info), "serial number", IDOK)
 crt.Dialog.MessageBox(str(ne_eas_info), "serial number", IDOK)
+
